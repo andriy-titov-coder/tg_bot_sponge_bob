@@ -52,6 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     menu_buttons = {
         'start': '🏠 Головне меню',
         'random': '🎲 Випадкова цікавинка',
+        'story': '📖 Казка-конструктор',
         'quiz': '🐙 Морська вікторина',
         'game': '✂️ Камінь, ножиці, папір',
         'tictactoe': '❌⭕️ Хрестики-нулики',
@@ -141,6 +142,124 @@ async def random_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await random(update, context)
     elif data == 'start':
         await start(update, context)
+
+
+async def story(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Initiates the fairy tale constructor mode.
+    """
+    logger.info(f"Користувач {update.effective_user.id} вибрав режим казки-конструктора")
+    user_profile = context.user_data.get("user_profile")
+    context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
+    context.user_data["conversation_state"] = "story_person"
+    
+    await send_image(update, context, "story")
+    
+    buttons = {
+        'story_person_bob': 'Губка Боб 🧽',
+        'story_person_patrick': 'Патрік ⭐️',
+        'story_person_squidward': 'Сквідвард 🐙',
+        'story_person_krabs': 'Містер Крабс 🦀',
+        'start': '🏠 Додому'
+    }
+    await send_text_buttons(update, context, "Ого! Давай складемо круту казку разом! 📖✨\n\nДля початку обери головного героя:", buttons)
+
+
+async def story_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles button clicks for the fairy tale constructor.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = update.effective_user.id
+    
+    logger.info(f"Користувач {user_id} натиснув кнопку казки: {data}")
+    
+    if data == 'story':
+        await story(update, context)
+        return
+
+    if data.startswith('story_person_'):
+        person_map = {
+            'bob': 'Губка Боб 🧽',
+            'patrick': 'Патрік ⭐️',
+            'squidward': 'Сквідвард 🐙',
+            'krabs': 'Містер Крабс 🦀'
+        }
+        key = data.replace('story_person_', '')
+        context.user_data['story_person'] = person_map.get(key, 'Губка Боб')
+        context.user_data['conversation_state'] = 'story_place'
+        
+        buttons = {
+            'story_place_pineapple': 'Будинок-Ананас 🍍',
+            'story_place_krusty': 'Красті Краб 🍔',
+            'story_place_jellyfish': 'Поля Медуз 🌸',
+            'story_place_rock': 'Дно Бікіні 🌊'
+        }
+        await send_text_buttons(update, context, f"Класний вибір! А де відбуватиметься наша історія?", buttons)
+        
+    elif data.startswith('story_place_'):
+        place_map = {
+            'pineapple': 'Будинок-Ананас 🍍',
+            'krusty': 'Красті Краб 🍔',
+            'jellyfish': 'Поля Медуз 🌸',
+            'rock': 'Дно Бікіні 🌊'
+        }
+        key = data.replace('story_place_', '')
+        context.user_data['story_place'] = place_map.get(key, 'Океан')
+        context.user_data['conversation_state'] = 'story_theme'
+        
+        buttons = {
+            'story_theme_treasure': 'Пошук скарбів 💰',
+            'story_theme_party': 'Вечірка з бульбашками 🫧',
+            'story_theme_cooking': 'Приготування супер-крабсбургера 🍔',
+            'story_theme_friendship': 'День дружби 🤝'
+        }
+        await send_text_buttons(update, context, "Майже готово! Залишилося обрати тему казки:", buttons)
+
+    elif data.startswith('story_theme_'):
+        theme_map = {
+            'treasure': 'Пошук скарбів 💰',
+            'party': 'Вечірка з бульбашками 🫧',
+            'cooking': 'Приготування супер-крабсбургера 🍔',
+            'friendship': 'День дружби 🤝'
+        }
+        key = data.replace('story_theme_', '')
+        context.user_data['story_theme'] = theme_map.get(key, 'Пригоди')
+        
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "друже"
+        gender = user_profile["gender"] if user_profile else "невідомо"
+        
+        person = context.user_data['story_person']
+        place = context.user_data['story_place']
+        theme = context.user_data['story_theme']
+        
+        message_to_delete = await send_text(update, context, "Так-так... Записую... 📝 Зараз буде щось неймовірне! Зачекай хвилинку...")
+        
+        prompt = load_prompt("story").format(
+            person=person,
+            place=place,
+            theme=theme,
+            name=name,
+            gender=gender
+        )
+        
+        try:
+            story_text = await chatgpt_service.send_question(prompt, "Розкажи казку!")
+            await message_to_delete.delete()
+            
+            buttons = {
+                'story': '🆕 Ще одну!',
+                'start': '🏠 Головне меню'
+            }
+            await send_text_buttons(update, context, story_text, buttons)
+            context.user_data["conversation_state"] = None
+        except Exception as e:
+            logger.error(f"Помилка при генерації казки: {e}")
+            await send_text(update, context, "Ой! Здається, моє чорнило закінчилося... 🐙 Спробуй ще раз пізніше!")
 
 
 async def gpt(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -394,6 +513,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message_text == '🧮 Рахуємо бульбашки':
             await calc(update, context)
             return
+        if message_text == '📖 Казка-конструктор':
+            await story(update, context)
+            return
         if message_text == '🏠 Головне меню':
             await start(update, context)
             return
@@ -535,6 +657,15 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             text="Ого! Хрестики-нулики! Це моя улюблена морська забава! Давай спробуємо... ❌⭕️✨"
         )
         await tictactoe(update, context)
+        return True
+
+    elif any(keyword in message_text_lower for keyword in ['казк', 'історі', 'story', 'конструктор']):
+        await send_text(
+            update,
+            context,
+            text="Ого! Давай складемо круту казку разом! 📖✨"
+        )
+        await story(update, context)
         return True
     return False
 

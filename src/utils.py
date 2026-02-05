@@ -22,7 +22,8 @@ async def send_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: st
     """
     Sends a Markdown-formatted text message to the user.
     """
-    text = text.encode('utf8').decode('utf8')
+    if isinstance(text, bytes):
+        text = text.decode('utf-8')
     return await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=text,
@@ -75,7 +76,8 @@ async def send_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     """
     Sends a text message with inline keyboard buttons.
     """
-    text = text.encode('utf8', errors='surrogatepass').decode('utf8')
+    if isinstance(text, bytes):
+        text = text.decode('utf-8')
     keyboard = []
     for key, value in buttons.items():
         button = InlineKeyboardButton(str(value), callback_data=str(key))

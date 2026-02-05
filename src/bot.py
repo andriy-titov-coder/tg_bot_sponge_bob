@@ -16,7 +16,8 @@ from database import init_db
 from handlers import (
     start, random, random_button, gpt, message_handler, talk, talk_button,
     translator, translator_button, gpt_button, calc, calc_button, registration_button,
-    quiz, quiz_button, game, game_button, tictactoe, tictactoe_button
+    quiz, quiz_button, game, game_button, tictactoe, tictactoe_button,
+    story, story_button
 )
 
 
@@ -33,6 +34,8 @@ app.add_handler(CommandHandler("calc", calc))
 app.add_handler(CommandHandler("quiz", quiz))
 app.add_handler(CommandHandler("game", game))
 app.add_handler(CommandHandler("tictactoe", tictactoe))
+app.add_handler(CommandHandler("story", story))
+app.add_handler(CallbackQueryHandler(story_button, pattern='^story.*$'))
 
 app.add_handler(CallbackQueryHandler(gpt_button, pattern='^start$'))
 app.add_handler(CallbackQueryHandler(random_button, pattern='^(random|start)$'))
