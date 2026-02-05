@@ -14,7 +14,7 @@ from telegram.ext import (
 from config import BOT_TOKEN
 from handlers import (
     start, random, random_button, gpt, message_handler, talk, talk_button,
-    translator, translator_button, gpt_button
+    translator, translator_button, gpt_button, calc, calc_button
 )
 
 
@@ -24,6 +24,7 @@ app.add_handler(CommandHandler("random", random))
 app.add_handler(CommandHandler("gpt", gpt))
 app.add_handler(CommandHandler("talk", talk))
 app.add_handler(CommandHandler("translator", translator))
+app.add_handler(CommandHandler("calc", calc))
 
 app.add_handler(CallbackQueryHandler(gpt_button, pattern='^start$'))
 app.add_handler(CallbackQueryHandler(random_button, pattern='^(random|start)$'))
@@ -33,6 +34,7 @@ app.add_handler(
 app.add_handler(
     CallbackQueryHandler(translator_button, pattern='^translator.*|^start$')
 )
+app.add_handler(CallbackQueryHandler(calc_button, pattern='^calc_.*$'))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 

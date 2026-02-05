@@ -35,11 +35,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update,
         context,
         {
-            'start': 'Головне меню',
-            'random': 'Дізнатися випадковий факт',
-            'gpt': 'Запитати мене про щось',
-            'talk': 'Поговорити з мультяшними персонажами',
-            'translator': 'Перекладач',
+            'start': '🏠 Головне меню',
+            'random': '🎲 Випадкова цікавинка',
+            'gpt': '🧠 Запитати в Розумника',
+            'talk': '🗣 Побалакати з друзями',
+            'translator': '🌐 Морський перекладач',
+            'calc': '🧮 Рахуємо бульбашки',
         }
     )
 
@@ -50,7 +51,7 @@ async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     logger.info(f"Користувач {update.effective_user.id} обрав режим випадкового факту")
     await send_image(update, context, "random")
-    message_to_delete = await send_text(update, context, "Шукаю випадковий факт ...")
+    message_to_delete = await send_text(update, context, "Зараз-зараз, виловлюю найкрутіший факт із океану знань... 🫧")
     try:
         prompt = load_prompt("random")
         fact = await chatgpt_service.send_question(
@@ -58,13 +59,13 @@ async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_text="Розкажи про випадковий факт"
         )
         buttons = {
-            'random': '💡 Хочу ще один факт',
-            'start': '⬅️ Повернутись у головне меню'
+            'random': '💡 Хочу ще одну цікавинку!',
+            'start': '⬅️ Назад до крабсбургерів'
         }
         await send_text_buttons(update, context, fact, buttons)
     except Exception as e:
         logger.error(f"Помилка в обробнику /random: {e}")
-        await send_text(update, context, "Помилка при отриманні випадкового факту.")
+        await send_text(update, context, "Ой-йой, медуза вжалила систему! Не можу знайти факт... 🐙")
     finally:
         await context.bot.delete_message(
             chat_id=update.effective_chat.id,
@@ -94,8 +95,8 @@ async def gpt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await send_image(update, context, "gpt")
     chatgpt_service.set_prompt(load_prompt("gpt"))
-    buttons = {'start': '⬅️ Повернутись у головне меню'}
-    await send_text_buttons(update, context, "Запитай мене про щось ...", buttons)
+    buttons = {'start': '⬅️ Додому в Ананас'}
+    await send_text_buttons(update, context, "Я готовий! Я готовий! Запитай мене про що завгодно! 🍍✨", buttons)
 
     context.user_data["conversation_state"] = "gpt"
 
@@ -107,17 +108,128 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
     conversation_state = context.user_data.get("conversation_state")
     logger.info(f"Користувач {update.effective_user.id} надіслав повідомлення у стані {conversation_state}: {message_text[:50]}...")
+
+    if conversation_state == "calc":
+        step = context.user_data.get("calc_step", "first")
+
+        if step == "first":
+            a = _parse_number(message_text)
+            if a is None:
+                await send_text(update, context, "Гаррі, це не число! 🐌 Спробуй ще раз, друже!")
+                return
+
+            context.user_data["calc_a"] = a
+            context.user_data["calc_step"] = "op"
+
+            buttons = {
+                "calc_op_+": "+",
+                "calc_op_-": "-",
+                "calc_op_*": "*",
+                "calc_op_/": "/",
+                "start": "⬅️ Назад до медуз",
+            }
+            await send_text_buttons(update, context, "Ух ти! І що ми з ним зробимо? 😏 Обери магічну дію:", buttons)
+            return
+
+        if step == "second":
+            b = _parse_number(message_text)
+            if b is None:
+                await send_text(update, context, "Ой-ой! Це точно не число! Спробуй ще раз, як Патрік! ⭐️")
+                return
+
+            a = float(context.user_data["calc_a"])
+            op = context.user_data.get("calc_op")
+
+            if op == "/" and _is_close(b, 0.0):
+                context.user_data["calc_step"] = "second"
+                await send_text(update, context, "Тартарський соус! 🍔 На нуль ділити не можна, навіть у Бікіні Боттом! Введи інше число.")
+                return
+
+            if op == "+":
+                correct = a + b
+            elif op == "-":
+                correct = a - b
+            elif op == "*":
+                correct = a * b
+            elif op == "/":
+                correct = a / b
+            else:
+                await send_text(update, context, "Щось я заплутався в водоростях... 🌿 Натисни кнопку з дією!")
+                context.user_data["calc_step"] = "op"
+                return
+
+            context.user_data["calc_b"] = b
+            context.user_data["calc_correct"] = correct
+            context.user_data["calc_attempts"] = 0
+            context.user_data["calc_step"] = "answer"
+
+            expr = f"{_format_number(a)} {op} {_format_number(b)}"
+            await send_text(
+                update,
+                context,
+                _md_escape(f"Скільки буде {expr}? Спроба 1 з 3. Чекаю твою відповідь! ⚓️")
+            )
+            return
+
+        if step == "answer":
+            user_answer = _parse_number(message_text)
+            if user_answer is None:
+                await send_text(update, context, "Потрібне число, друже! Порахуй на пальцях... або на щупальцях! 🐙")
+                return
+
+            correct = float(context.user_data["calc_correct"])
+            attempts = int(context.user_data.get("calc_attempts", 0))
+
+            if _answers_match(user_answer, correct, message_text):
+                buttons = {
+                    "calc_again": "🔁 Ще приклад!",
+                    "start": "⬅️ Назад до Лагуни",
+                }
+                context.user_data["calc_step"] = "first"
+                await send_text_buttons(update, context, "ПРАВИЛЬНО! Ти просто геній, як Сенді! 🐿✨", buttons)
+                return
+
+            attempts += 1
+            context.user_data["calc_attempts"] = attempts
+
+            a = float(context.user_data["calc_a"])
+            b = float(context.user_data["calc_b"])
+            op = context.user_data["calc_op"]
+
+            if attempts < 3:
+                expr = f"{_format_number(a)} {op} {_format_number(b)}"
+                await send_text(
+                    update,
+                    context,
+                    _md_escape(f"Не вийшло... але не здавайся! 🌈 Спроба {attempts + 1} з 3. Скільки буде {expr}?")
+                )
+                return
+
+            buttons = {
+                "calc_again": "🔁 Ще приклад!",
+                "start": "⬅️ Назад до меню",
+            }
+            context.user_data["calc_step"] = "first"
+            await send_text_buttons(update, context, f"Ой, три спроби пролетіли, як медузи! 🪼 Правильна відповідь: {_format_number(correct)}.",
+                                    buttons)
+            return
+
+        # Якщо раптом step зламався
+        context.user_data["calc_step"] = "first"
+        await send_text(update, context, "Ой-ой, щось пішло не так під водою! Давай спочатку. Введи перше число! 🍍")
+        return
+
     if conversation_state == "gpt":
         waiting_message = await send_text(update, context, "...")
         try:
             response = await chatgpt_service.add_message(message_text)
             buttons = {
-                "start": "⬅️ Повернутись у головне меню"
+                "start": "⬅️ Назад на берег"
             }
             await send_text_buttons(update, context, response, buttons)
         except Exception as e:
             logger.error(f"Помилка при отриманні відповіді від ChatGPT: {e}")
-            await send_text(update, context, "Виникла помилка при обробці вашого повідомлення.")
+            await send_text(update, context, "Тартарський соус! Щось зламалось у моїх мізках... 🧠💦 Спробуй ще раз пізніше!")
         finally:
             await context.bot.delete_message(
                 chat_id=update.effective_chat.id,
@@ -129,17 +241,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = load_prompt(personality)
             chatgpt_service.set_prompt(prompt)
         else:
-            await send_text(update, context, "Обери мультяшку, з якою хочеш поспілкуватись!")
+            await send_text(update, context, "Гей! Спочатку обери, з ким хочеш потеревенити! 🗣🐙")
             return
         waiting_message = await send_text(update, context, "...")
         try:
             response = await chatgpt_service.add_message(message_text)
-            buttons = {"start": "⬅️ Повернутись у головне меню"}
+            buttons = {"start": "⬅️ Додому в Ананас"}
             personality_name = personality.replace("talk_", "").replace("_", " ").title()
             await send_text_buttons(update, context, f"{personality_name}: {response}", buttons)
         except Exception as e:
             logger.error(f"Помилка при отриманні відповіді від ChatGPT: {e}")
-            await send_text(update, context, "Виникла помилка при отриманні відповіді!")
+            await send_text(update, context, "Ой! Здається, твій друг кудись зник під воду... 🌊 Спробуй ще раз!")
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
         finally:
             await context.bot.delete_message(
@@ -149,10 +261,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif conversation_state == "translator":
         target_lang = context.user_data.get("translator_lang")
         if not target_lang:
-            await send_text(update, context, "Будь ласка, спочатку оберіть мову для перекладу.")
+            await send_text(update, context, "Крабсбургер мені в рот! Ти ж не вибрав мову! 🍔 Обери швидше!")
             return
 
-        waiting_message = await send_text(update, context, "Перекладаю...")
+        waiting_message = await send_text(update, context, "Перекладаю на морську мову... 🫧")
         try:
             prompt_template = load_prompt("translator")
             prompt = prompt_template.format(target_lang=target_lang)
@@ -162,12 +274,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "translator_en": "English 🇺🇸",
                 "translator_uk": "Українська 🇺🇦",
                 "translator_ru": "Російська 🇷🇺",
-                "start": "⬅️ Повернутись у головне меню"
+                "start": "⬅️ Назад до меню"
             }
             await send_text_buttons(update, context, translation, buttons)
         except Exception as e:
             logger.error(f"Error in translator: {e}")
-            await send_text(update, context, "Виникла помилка при перекладі.")
+            await send_text(update, context, "Щось переклад застряг у водоростях... 🌿 Спробуй іншу фразу!")
         finally:
             await context.bot.delete_message(update.effective_chat.id, waiting_message.message_id)
 
@@ -190,9 +302,9 @@ async def talk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'talk_patrick_star': "Patrick Star",
         'talk_squidward_tentacles': "Squidward Tentacles",
         'talk_number_one': "Number One",
-        'start': "⬅️ Повернутись у головне меню",
+        'start': "⬅️ Назад до Ананаса",
     }
-    await send_text_buttons(update, context, "Оберіть особистість для спілкування ...", personalities)
+    await send_text_buttons(update, context, "Ого! З ким хочеш потеревенити сьогодні? Обирай свого героя! 🗣✨", personalities)
 
 
 async def gpt_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -256,7 +368,7 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await send_text(
             update,
             context,
-            text="Схоже, ви цікавитесь випадковими фактами! Зараз покажу вам один..."
+            text="Ух ти! Схоже, ти шукаєш щось цікавеньке! Зараз виловлю для тебе факт... 🎲🫧"
         )
         await random(update, context)
         return True
@@ -265,7 +377,7 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await send_text(
             update,
             context,
-            text="Схоже, у вас є питання! Переходимо до режиму спілкування з ChatGPT..."
+            text="Ого! Схоже, у тебе є питання! Давай запитаємо у Розумника! 🧠✨"
         )
         await gpt(update, context)
         return True
@@ -274,7 +386,7 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await send_text(
             update,
             context,
-            text="Схоже, ви хочете поговорити з відомою особистістю! Зараз покажу вам доступні варіанти..."
+            text="Ого! Здається, ти хочеш поговорити з кимось крутим! Зараз покажу тобі моїх друзів... 🗣✨"
         )
         await talk(update, context)
         return True
@@ -287,21 +399,19 @@ async def show_funny_response(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     logger.info(f"Користувач {update.effective_user.id} надіслав невідому команду, надсилаю жартівливу відповідь")
     funny_responses = [
-        "Хмм... Цікаво, але я не зрозумів, що саме ви хочете. Може спробуєте одну з команд з меню?",
-        "Дуже цікаве повідомлення! Але мені потрібні чіткіші інструкції. Ось доступні команди:",
-        "Ой, здається, ви мене застали зненацька! Я вмію багато чого, але мені потрібна конкретна команда:",
-        "Вибачте, мої алгоритми не розпізнали це як команду. Ось що я точно вмію:",
-        "Це повідомлення таке ж загадкове, як єдиноріг у дикій природі! Спробуйте одну з цих команд:",
-        "Я намагаюся зрозуміти ваше повідомлення... Але краще скористайтесь однією з команд:",
-        "О! Випадкове повідомлення! Я теж вмію бути випадковим, але краще використовуйте команди:",
-        "Гм, не спрацювало. Може спробуємо ці команди?",
-        "Це повідомлення прекрасне, як веселка! Але для повноцінного спілкування спробуйте:",
-        "Згідно з моїми розрахунками, це повідомлення не відповідає жодній з моїх команд. Ось вони:",
+        "Ой-ой! Здається, твої слова змило хвилею... 🌊 Я нічого не зрозумів! Спробуй щось із меню!",
+        "Тартарський соус! 🍔 Це якесь таємне послання від Планктона? Краще обери команду!",
+        "Гаррі каже, що це не схоже на команду... 🐌 Спробуй ще раз, друже!",
+        "Ми з Патріком цілий день думали, але так і не зрозуміли, що це! ⭐️ Обирай кнопку!",
+        "Це звучить так само дивно, як Сквідвард на вечірці! 🐙 Давай краще користуватися меню!",
+        "Ух ти! Якесь незнайоме слово! Може, краще полювання на медуз? 🪼 Або просто обери команду!",
+        "Мої бульбашки кажуть, що це не те... 🫧 Спробуй натиснути на /start!",
+        "Ой! Ти так швидко говориш, що в мене штани затремтіли! 🩳 Давай за командами!",
     ]
     random_response = choice(funny_responses)
     available_commands = """
-    - Не знаєте, що обрати? Почніть з /start,
-    - Спробуйте команду /gpt, щоб задати питання
+    🌟 Не знаєш з чого почати? Тисни /start!
+    🧠 Або запитай Розумника через /gpt!
     """
     full_message = f"{random_response}\n{available_commands}"
     await update.message.reply_text(full_message)
@@ -320,9 +430,9 @@ async def translator(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "translator_en": "English 🇺🇸",
         "translator_uk": "Українська 🇺🇦",
         "translator_ru": "Російська 🇷🇺",
-        "start": "⬅️ Повернутись у головне меню"
+        "start": "⬅️ Назад до Ананаса"
     }
-    await send_text_buttons(update, context, "Оберіть мову, на яку потрібно перекласти текст:", buttons)
+    await send_text_buttons(update, context, "Ого! На яку мову мені перекласти твої слова? Обирай швидше! 🌐✨", buttons)
 
 
 async def translator_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -346,4 +456,95 @@ async def translator_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ru": "російську",
         }
         context.user_data["translator_lang"] = langs.get(lang_code, lang_code)
-        await send_text(update, context, f"Вибрано мову: {context.user_data['translator_lang']}. Надсилайте текст.")
+        await send_text(update, context, f"Є! Вибрано {context.user_data['translator_lang']} мову! 🌐 Тепер пиши свій текст, я чекаю!")
+
+
+def _parse_number(text: str):
+    text = text.strip().replace(",", ".")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _decimals_in_input(text: str) -> int:
+    """
+    Returns how many digits user typed after decimal separator.
+    Examples: "1,3" -> 1, "2.50" -> 2, "10" -> 0
+    """
+    s = text.strip().replace(",", ".")
+    if "." not in s:
+        return 0
+    frac = s.split(".", 1)[1]
+    digits = "".join(ch for ch in frac if ch.isdigit())
+    return len(digits)
+
+
+def _answers_match(user_answer: float, correct: float, raw_text: str) -> bool:
+    """
+    Smart check:
+    - still accepts exact/very close answers
+    - if user typed N decimals, accept if correct rounded to N decimals equals their number
+    """
+    if _is_close(user_answer, correct):
+        return True
+
+    n = _decimals_in_input(raw_text)
+    if n > 0:
+        return _is_close(user_answer, round(correct, n), eps=1e-12)
+
+    return False
+
+
+def _format_number(x: float) -> str:
+    if abs(x - round(x)) < 1e-12:
+        return str(int(round(x)))
+    return str(x)
+
+
+def _is_close(a: float, b: float, eps: float = 1e-9) -> bool:
+    return abs(a - b) <= eps * max(1.0, abs(a), abs(b))
+
+def _md_escape(text: str) -> str:
+    return (
+        text.replace("\\", "\\\\")
+            .replace("_", "\\_")
+            .replace("*", "\\*")
+            .replace("`", "\\`")
+            .replace("[", "\\[")
+    )
+
+
+async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Користувач {update.effective_user.id} відкрив калькулятор")
+    context.user_data.clear()
+    context.user_data["conversation_state"] = "calc"
+    context.user_data["calc_step"] = "first"
+    await send_image(update, context, "calculator")
+    await send_text(update, context, "Я готовий! Я готовий! Давай порахуємо всі бульбашки в океані! 🧮🫧 Введи перше число:")
+
+
+async def calc_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "calc_again":
+        await calc(update, context)
+        return
+
+    if data.startswith("calc_op_"):
+        op = data.replace("calc_op_", "", 1)
+
+        if context.user_data.get("conversation_state") != "calc":
+            await send_text(update, context, "Гей! Спочатку скажи мені /calc, щоб ми почали рахувати! 🧮")
+            return
+
+        if context.user_data.get("calc_step") != "op":
+            await send_text(update, context, "Стривай! Спочатку введи перше число, а потім будемо вибирати дію! 🍍")
+            return
+
+        context.user_data["calc_op"] = op
+        context.user_data["calc_step"] = "second"
+        await send_text(update, context, "Супер-пупер! Ти молодець! 😃 А тепер введи друге число!")
+        return
