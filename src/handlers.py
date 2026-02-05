@@ -273,10 +273,11 @@ async def gpt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["user_profile"] = user_profile
     
     name = user_profile["name"] if user_profile else ""
-    gender_text = "друже" if user_profile and user_profile.get("gender") == "boy" else "подруго"
+    gender = user_profile["gender"] if user_profile else "невідомо"
     
     await send_image(update, context, "gpt")
-    chatgpt_service.set_prompt(load_prompt("gpt") + f"\nКористувач: {name}, Стать: {user_profile['gender'] if user_profile else 'невідомо'}")
+    prompt = load_prompt("gpt") + f"\nКористувач: {name}, Стать: {gender}. Обов'язково звертайся до мене на ім'я та враховуй мою стать у своїх відповідях!"
+    chatgpt_service.set_prompt(context, prompt)
     buttons = {'start': '⬅️ Додому в Ананас'}
     await send_text_buttons(update, context, f"Я готовий! Я готовий! Запитай мене про що завгодно, {name}! 🍍✨", buttons)
 
@@ -449,7 +450,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if conversation_state == "gpt":
         waiting_message = await send_text(update, context, "...")
         try:
-            response = await chatgpt_service.add_message(message_text)
+            response = await chatgpt_service.add_message(context, message_text)
             buttons = {
                 "start": "⬅️ Назад на берег"
             }
@@ -468,15 +469,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         gender = user_profile["gender"] if user_profile else "невідомо"
         
         personality = context.user_data.get("selected_personality")
-        if personality:
-            prompt = load_prompt(personality)
-            chatgpt_service.set_prompt(prompt + f"\nКористувач: {name}, Стать: {gender}")
-        else:
+        if not personality:
             await send_text(update, context, "Гей! Спочатку обери, з ким хочеш потеревенити! 🗣🐙")
             return
+
         waiting_message = await send_text(update, context, "...")
         try:
-            response = await chatgpt_service.add_message(message_text)
+            response = await chatgpt_service.add_message(context, message_text)
             buttons = {"start": "⬅️ Додому в Ананас"}
             personality_name = personality.replace("talk_", "").replace("_", " ").title()
             await send_text_buttons(update, context, f"{personality_name}: {response}", buttons)
@@ -564,7 +563,9 @@ async def talk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Handles the /talk command. Displays the list of available celebrities to chat with.
     """
     logger.info(f"Користувач {update.effective_user.id} відкрив меню вибору особистостей")
+    user_profile = context.user_data.get("user_profile")
     context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
     await send_image(update, context, "talk")
     personalities = {
         'talk_sponge_bob': "Sponge Bob",
@@ -585,7 +586,9 @@ async def gpt_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     logger.info(f"Користувач {update.effective_user.id} натиснув кнопку у режимі GPT: {data}")
     if data == "start":
+        user_profile = context.user_data.get("user_profile")
         context.user_data.clear()
+        context.user_data["user_profile"] = user_profile
         await start(update, context)
 
 
@@ -614,8 +617,9 @@ async def talk_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["user_profile"] = user_profile
         context.user_data["selected_personality"] = data
         context.user_data["conversation_state"] = "talk"
-        prompt = load_prompt(data)
-        chatgpt_service.set_prompt(prompt + f"\nКористувач: {name}, Стать: {gender}")
+        prompt_template = load_prompt(data)
+        prompt = prompt_template + f"\n\nКористувач: {name}, Стать: {gender}. Обов'язково звертайся до мене на ім'я та враховуй мою стать у своїх відповідях! Поводься як обраний персонаж на 100%!"
+        chatgpt_service.set_prompt(context, prompt)
         personality_name = data.replace("talk_", "").replace("_", " ").title()
         await send_image(update, context, data)
         buttons = {

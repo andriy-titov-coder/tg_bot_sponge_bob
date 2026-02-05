@@ -9,10 +9,13 @@ def gpt_service():
 
 
 def test_set_prompt(gpt_service):
-    gpt_service.set_prompt("Test Prompt")
-    assert len(gpt_service.message_list) == 1
-    assert gpt_service.message_list[0]["role"] == "system"
-    assert gpt_service.message_list[0]["content"] == "Test Prompt"
+    mock_context = MagicMock()
+    mock_context.user_data = {}
+    gpt_service.set_prompt(mock_context, "Test Prompt")
+    history = mock_context.user_data["gpt_history"]
+    assert len(history) == 1
+    assert history[0]["role"] == "system"
+    assert history[0]["content"] == "Test Prompt"
 
 
 @pytest.mark.asyncio
@@ -25,4 +28,3 @@ async def test_send_question(gpt_service, mocker):
     result = await gpt_service.send_question("System prompt", "User question")
 
     assert result == "AI Response"
-    assert len(gpt_service.message_list) == 3
