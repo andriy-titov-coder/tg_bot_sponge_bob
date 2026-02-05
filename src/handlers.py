@@ -5,7 +5,7 @@ import logging
 import json
 from random import choice
 
-from telegram import Update
+from telegram import (Update, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import ContextTypes
 
 from config import CHATGPT_TOKEN
@@ -54,6 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'random': '🎲 Випадкова цікавинка',
         'quiz': '🐙 Морська вікторина',
         'game': '✂️ Камінь, ножиці, папір',
+        'tictactoe': '❌⭕️ Хрестики-нулики',
         'gpt': '🧠 Запитати в Розумника',
         'talk': '🗣 Побалакати з друзями',
         'translator': '🌐 Морський перекладач',
@@ -378,6 +379,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message_text == '✂️ Камінь, ножиці, папір':
             await game(update, context)
             return
+        if message_text == '❌⭕️ Хрестики-нулики':
+            await tictactoe(update, context)
+            return
         if message_text == '🧠 Запитати в Розумника':
             await gpt(update, context)
             return
@@ -522,6 +526,15 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             text="О, я обожнюю грати! Давай зіграємо в 'Камінь, ножиці, папір'! Я вже обрав... ✂️🪨📄"
         )
         await game(update, context)
+        return True
+
+    elif any(keyword in message_text_lower for keyword in ['хрестик', 'нолик', 'tictactoe', 'хрест']):
+        await send_text(
+            update,
+            context,
+            text="Ого! Хрестики-нулики! Це моя улюблена морська забава! Давай спробуємо... ❌⭕️✨"
+        )
+        await tictactoe(update, context)
         return True
     return False
 
@@ -794,6 +807,179 @@ async def game_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await send_text_buttons(update, context, result_text, buttons)
         return
+
+
+async def tictactoe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Initializes a Tic-Tac-Toe game.
+    """
+    logger.info(f"Користувач {update.effective_user.id} запустив Хрестики-Нулики")
+    user_profile = context.user_data.get("user_profile")
+    context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
+    context.user_data["conversation_state"] = "tictactoe"
+    
+    # Створюємо пусте поле
+    board = [" " for _ in range(9)]
+    context.user_data["ttt_board"] = board
+    
+    name = user_profile["name"] if user_profile else "друже"
+    
+    await send_image(update, context, "tictactoe")
+    
+    keyboard = _get_ttt_keyboard(board)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"ХЕЙ-ГОУ, {name.upper()}! 🍍\nДавай зіграємо в Хрестики-Нулики! Ти граєш за ❌, а я за ⭕️. Твій хід!",
+        reply_markup=reply_markup
+    )
+
+
+async def tictactoe_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles Tic-Tac-Toe moves.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = update.effective_user.id
+    
+    if data == "ttt_start":
+        await tictactoe(update, context)
+        return
+    
+    if data == "start":
+        user_profile = context.user_data.get("user_profile")
+        context.user_data.clear()
+        context.user_data["user_profile"] = user_profile
+        await start(update, context)
+        return
+
+    if not data.startswith("ttt_cell_"):
+        return
+
+    board = context.user_data.get("ttt_board")
+    if not board:
+        return
+
+    index = int(data.replace("ttt_cell_", ""))
+    
+    # Якщо клітинка зайнята
+    if board[index] != " ":
+        return
+
+    # Хід користувача (X)
+    board[index] = "X"
+    
+    # Перевірка на перемогу користувача
+    if _check_ttt_winner(board, "X"):
+        await _finish_ttt(update, context, board, "win")
+        return
+    
+    # Перевірка на нічию
+    if " " not in board:
+        await _finish_ttt(update, context, board, "draw")
+        return
+
+    # Хід бота (O)
+    bot_move = _get_ttt_bot_move(board)
+    if bot_move is not None:
+        board[bot_move] = "O"
+    
+    # Перевірка на перемогу бота
+    if _check_ttt_winner(board, "O"):
+        await _finish_ttt(update, context, board, "lose")
+        return
+
+    # Перевірка на нічию після ходу бота
+    if " " not in board:
+        await _finish_ttt(update, context, board, "draw")
+        return
+
+    # Оновлюємо клавіатуру
+    keyboard = _get_ttt_keyboard(board)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_reply_markup(reply_markup=reply_markup)
+
+
+def _get_ttt_keyboard(board):
+    keyboard = []
+    for i in range(0, 9, 3):
+        row = []
+        for j in range(3):
+            cell = board[i+j]
+            display = cell if cell != " " else "⬜️"
+            row.append(InlineKeyboardButton(display, callback_data=f"ttt_cell_{i+j}"))
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("⬅️ Назад до Ананаса", callback_data="start")])
+    return keyboard
+
+
+def _check_ttt_winner(board, player):
+    win_configs = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8], # Горизонталі
+        [0, 3, 6], [1, 4, 7], [2, 5, 8], # Вертикалі
+        [0, 4, 8], [2, 4, 6]             # Діагоналі
+    ]
+    for config in win_configs:
+        if all(board[i] == player for i in config):
+            return True
+    return False
+
+
+def _get_ttt_bot_move(board):
+    # 1. Перевірка чи може бот виграти наступним ходом
+    for i in range(9):
+        if board[i] == " ":
+            board_copy = list(board)
+            board_copy[i] = "O"
+            if _check_ttt_winner(board_copy, "O"):
+                return i
+    
+    # 2. Блокування перемоги користувача
+    for i in range(9):
+        if board[i] == " ":
+            board_copy = list(board)
+            board_copy[i] = "X"
+            if _check_ttt_winner(board_copy, "X"):
+                return i
+    
+    # 3. Випадковий хід
+    empty_cells = [i for i, cell in enumerate(board) if cell == " "]
+    return choice(empty_cells) if empty_cells else None
+
+
+async def _finish_ttt(update: Update, context: ContextTypes.DEFAULT_TYPE, board, result):
+    user_profile = context.user_data.get("user_profile")
+    name = user_profile["name"] if user_profile else "друже"
+    gender = user_profile["gender"] if user_profile else "boy"
+    
+    board_display = ""
+    for i in range(0, 9, 3):
+        row = board[i:i+3]
+        board_display += " | ".join([cell if cell != " " else "⬜️" for cell in row]) + "\n"
+    
+    if result == "win":
+        win_text = "Ти переміг!" if gender == "boy" else "Ти перемогла!"
+        msg = f"ОГО-ГО! {win_text} 🎉\n\n{board_display}\nТи справжній майстер морських ігор, {name}! 🍍✨"
+    elif result == "lose":
+        msg = f"УРААА! Я ПЕРЕМІГ! ⭕️\n\n{board_display}\nНе сумуй, {name}, медузи кажуть, що наступного разу тобі пощастить! 🪼✨"
+    else:
+        msg = f"ОЙ! У нас нічия! 🤝\n\n{board_display}\nМи обоє круті, як два крабсбургери! 🍔🍔"
+    
+    buttons = {
+        "ttt_start": "🔁 Ще партію!",
+        "start": "⬅️ Назад до меню"
+    }
+    
+    # Видаляємо стару клавіатуру і надсилаємо результат
+    await update.callback_query.edit_message_text(text=msg)
+    
+    # Окремим повідомленням з кнопками
+    await send_text_buttons(update, context, "Хочеш зіграти ще раз?", buttons)
 
 
 def _parse_number(text: str):

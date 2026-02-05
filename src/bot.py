@@ -2,7 +2,7 @@
 Main entry point for the Telegram bot.
 Initializes the bot and registers all command and callback handlers.
 """
-from telegram import Update
+from telegram import (Update, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -16,7 +16,7 @@ from database import init_db
 from handlers import (
     start, random, random_button, gpt, message_handler, talk, talk_button,
     translator, translator_button, gpt_button, calc, calc_button, registration_button,
-    quiz, quiz_button, game, game_button
+    quiz, quiz_button, game, game_button, tictactoe, tictactoe_button
 )
 
 
@@ -32,6 +32,7 @@ app.add_handler(CommandHandler("translator", translator))
 app.add_handler(CommandHandler("calc", calc))
 app.add_handler(CommandHandler("quiz", quiz))
 app.add_handler(CommandHandler("game", game))
+app.add_handler(CommandHandler("tictactoe", tictactoe))
 
 app.add_handler(CallbackQueryHandler(gpt_button, pattern='^start$'))
 app.add_handler(CallbackQueryHandler(random_button, pattern='^(random|start)$'))
@@ -44,6 +45,7 @@ app.add_handler(
 app.add_handler(CallbackQueryHandler(calc_button, pattern='^calc_.*$'))
 app.add_handler(CallbackQueryHandler(quiz_button, pattern='^quiz_.*$'))
 app.add_handler(CallbackQueryHandler(game_button, pattern='^game_.*$'))
+app.add_handler(CallbackQueryHandler(tictactoe_button, pattern='^ttt_.*$'))
 app.add_handler(CallbackQueryHandler(registration_button, pattern='^registration_.*$'))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
