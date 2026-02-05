@@ -53,6 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'start': '🏠 Головне меню',
         'random': '🎲 Випадкова цікавинка',
         'quiz': '🐙 Морська вікторина',
+        'game': '✂️ Камінь, ножиці, папір',
         'gpt': '🧠 Запитати в Розумника',
         'talk': '🗣 Побалакати з друзями',
         'translator': '🌐 Морський перекладач',
@@ -374,6 +375,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message_text == '🐙 Морська вікторина':
             await quiz(update, context)
             return
+        if message_text == '✂️ Камінь, ножиці, папір':
+            await game(update, context)
+            return
         if message_text == '🧠 Запитати в Розумника':
             await gpt(update, context)
             return
@@ -509,6 +513,15 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             text="УРААА! Вікторина! Я готовий, я готовий! Зараз щось придумаю цікавеньке... 🐙✨"
         )
         await quiz(update, context)
+        return True
+
+    elif any(keyword in message_text_lower for keyword in ['гра', 'кам', 'нож', 'пап', 'game', 'rps']):
+        await send_text(
+            update,
+            context,
+            text="О, я обожнюю грати! Давай зіграємо в 'Камінь, ножиці, папір'! Я вже обрав... ✂️🪨📄"
+        )
+        await game(update, context)
         return True
     return False
 
@@ -683,6 +696,104 @@ async def translator_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         context.user_data["translator_lang"] = langs.get(lang_code, lang_code)
         await send_text(update, context, f"Є! Вибрано {context.user_data['translator_lang']} мову! 🌐 Тепер пиши свій текст, я чекаю!")
+
+
+async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /game command. Starts a Rock-Paper-Scissors game.
+    """
+    logger.info(f"Користувач {update.effective_user.id} запустив гру Камінь-Ножиці-Папір")
+    user_profile = context.user_data.get("user_profile")
+    context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
+    context.user_data["conversation_state"] = "game"
+
+    name = user_profile["name"] if user_profile else "друже"
+    
+    await send_image(update, context, "game")
+    
+    buttons = {
+        "game_rock": "🪨 Камінь",
+        "game_paper": "📄 Папір",
+        "game_scissors": "✂️ Ножиці",
+        "start": "⬅️ Назад до Ананаса"
+    }
+    
+    await send_text_buttons(
+        update, 
+        context, 
+        f"ГЕЙ-ГОУ, {name.upper()}! 🍍\nДавай зіграємо в мою найулюбленішу гру! "
+        f"\n\nОбирай свою зброю, а я виберу свою! Раз... два... три!", 
+        buttons
+    )
+
+
+async def game_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles callback queries for the game mode.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = update.effective_user.id
+    logger.info(f"Користувач {user_id} вибрав у грі: {data}")
+
+    if data == "start":
+        user_profile = context.user_data.get("user_profile")
+        context.user_data.clear()
+        context.user_data["user_profile"] = user_profile
+        await start(update, context)
+        return
+
+    if data == "game_again":
+        await game(update, context)
+        return
+
+    if data.startswith("game_"):
+        user_choice = data.replace("game_", "", 1)
+
+        choices_emojis = {
+            "rock": "🪨 Камінь",
+            "paper": "📄 Папір",
+            "scissors": "✂️ Ножиці"
+        }
+
+        if user_choice not in choices_emojis:
+            logger.warning(f"Невідомий вибір у грі: {user_choice} (data={data})")
+            await send_text(update, context, "Ой-йой! Я не зрозумів цей хід 🐙 Спробуй ще раз!")
+            await game(update, context)
+            return
+
+        bot_choice = choice(list(choices_emojis.keys()))
+
+        user_emoji = choices_emojis[user_choice]
+        bot_emoji = choices_emojis[bot_choice]
+
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "друже"
+        gender = user_profile["gender"] if user_profile else "boy"
+
+        result_text = f"Твій вибір: *{user_emoji}*\nМій вибір: *{bot_emoji}*\n\n"
+
+        if user_choice == bot_choice:
+            result_text += f"ОГО! У нас нічия, {name}! 😲 Ми думаємо однаково, як дві медузи! 🪼🪼"
+        elif (user_choice == "rock" and bot_choice == "scissors") or \
+             (user_choice == "scissors" and bot_choice == "paper") or \
+             (user_choice == "paper" and bot_choice == "rock"):
+
+            win_phrase = "Ти переміг!" if gender == "boy" else "Ти перемогла!"
+            result_text += f"ТАРТАРСЬКИЙ СОУС! 🍔 {win_phrase.upper()} 🎉\n{name}, ти справжній чемпіон Бікіні Боттом!"
+        else:
+            lose_phrase = "Я переміг!"
+            result_text += f"УРААА! {lose_phrase.upper()} 🍍✨\nНе засмучуйся, {name}, наступного разу тобі точно пощастить! Давай ще раз?"
+
+        buttons = {
+            "game_again": "🎮 Зіграти ще раз!",
+            "start": "⬅️ Назад до Ананаса"
+        }
+
+        await send_text_buttons(update, context, result_text, buttons)
+        return
 
 
 def _parse_number(text: str):
