@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 
 from config import CHATGPT_TOKEN
 from gpt import ChatGPTService
-from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons)
+from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons, send_main_menu_reply)
 
 chatgpt_service = ChatGPTService(CHATGPT_TOKEN)
 
@@ -30,19 +30,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     logger.info(f"Користувач {update.effective_user.id} запустив бот")
     await send_image(update, context, "start")
-    await send_text(update, context, load_message("start"))
-    await show_main_menu(
-        update,
-        context,
-        {
-            'start': '🏠 Головне меню',
-            'random': '🎲 Випадкова цікавинка',
-            'gpt': '🧠 Запитати в Розумника',
-            'talk': '🗣 Побалакати з друзями',
-            'translator': '🌐 Морський перекладач',
-            'calc': '🧮 Рахуємо бульбашки',
-        }
+    
+    menu_buttons = {
+        'start': '🏠 Головне меню',
+        'random': '🎲 Випадкова цікавинка',
+        'gpt': '🧠 Запитати в Розумника',
+        'talk': '🗣 Побалакати з друзями',
+        'translator': '🌐 Морський перекладач',
+        'calc': '🧮 Рахуємо бульбашки',
+    }
+    
+    await send_main_menu_reply(
+        update, 
+        context, 
+        load_message("start"), 
+        list(menu_buttons.values())
     )
+    
+    await show_main_menu(update, context, menu_buttons)
 
 
 async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -284,6 +289,26 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.delete_message(update.effective_chat.id, waiting_message.message_id)
 
     if not conversation_state:
+        # Обробка фізичних кнопок головного меню
+        if message_text == '🎲 Випадкова цікавинка':
+            await random(update, context)
+            return
+        if message_text == '🧠 Запитати в Розумника':
+            await gpt(update, context)
+            return
+        if message_text == '🗣 Побалакати з друзями':
+            await talk(update, context)
+            return
+        if message_text == '🌐 Морський перекладач':
+            await translator(update, context)
+            return
+        if message_text == '🧮 Рахуємо бульбашки':
+            await calc(update, context)
+            return
+        if message_text == '🏠 Головне меню':
+            await start(update, context)
+            return
+
         intent_recognized = await inter_random_input(update, context, message_text)
         if not intent_recognized:
             await show_funny_response(update, context)

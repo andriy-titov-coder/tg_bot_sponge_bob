@@ -5,7 +5,7 @@ import os
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram import (Update, BotCommand, BotCommandScopeChat, MenuButtonCommands, InlineKeyboardButton,
-                      InlineKeyboardMarkup)
+                      InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton)
 
 
 def load_message(name: str) -> str:
@@ -87,4 +87,23 @@ async def send_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML,
         message_thread_id=update.effective_message.message_thread_id
+    )
+
+
+async def send_main_menu_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, button_labels: list):
+    """
+    Sends a text message with a ReplyKeyboardMarkup (physical buttons).
+    """
+    keyboard = []
+    # Створюємо кнопки по 2 в ряд
+    for i in range(0, len(button_labels), 2):
+        row = [KeyboardButton(label) for label in button_labels[i:i + 2]]
+        keyboard.append(row)
+
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN
     )
