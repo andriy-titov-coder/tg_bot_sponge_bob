@@ -12,11 +12,15 @@ from telegram.ext import (
 )
 
 from config import BOT_TOKEN
+from database import init_db
 from handlers import (
     start, random, random_button, gpt, message_handler, talk, talk_button,
-    translator, translator_button, gpt_button, calc, calc_button
+    translator, translator_button, gpt_button, calc, calc_button, registration_button
 )
 
+
+# Initialize database
+init_db()
 
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
@@ -35,6 +39,7 @@ app.add_handler(
     CallbackQueryHandler(translator_button, pattern='^translator.*|^start$')
 )
 app.add_handler(CallbackQueryHandler(calc_button, pattern='^calc_.*$'))
+app.add_handler(CallbackQueryHandler(registration_button, pattern='^registration_.*$'))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 

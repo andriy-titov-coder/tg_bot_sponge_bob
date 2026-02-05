@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from config import CHATGPT_TOKEN
 from gpt import ChatGPTService
 from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons, send_main_menu_reply)
+from database import get_user, save_user
 
 chatgpt_service = ChatGPTService(CHATGPT_TOKEN)
 
@@ -26,9 +27,25 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles the /start command. Displays the welcome message and main menu.
+    Handles the /start command. Checks if user is registered, otherwise starts registration.
     """
-    logger.info(f"Користувач {update.effective_user.id} запустив бот")
+    user_id = update.effective_user.id
+    user_profile = get_user(user_id)
+
+    if not user_profile:
+        logger.info(f"Новий користувач {user_id}, починаємо реєстрацію")
+        context.user_data.clear()
+        context.user_data["conversation_state"] = "registration_name"
+        await send_image(update, context, "start")
+        await send_text(update, context, "ПРИВІТ! Я Губка Боб! 🍍 Я такий радий тебе бачити! "
+                                        "\nАле стривай... я ще не знаю твого імені! 😱"
+                                        "\nЯк тебе звати, друже?")
+        return
+
+    # Зберігаємо профіль у context для швидкого доступу
+    context.user_data["user_profile"] = user_profile
+    
+    logger.info(f"Користувач {user_id} ({user_profile['name']}) запустив бот")
     await send_image(update, context, "start")
     
     menu_buttons = {
@@ -40,14 +57,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'calc': '🧮 Рахуємо бульбашки',
     }
     
+    name = user_profile["name"]
+    welcome_msg = load_message("start").replace("{name}", name)
+    
     await send_main_menu_reply(
         update, 
         context, 
-        load_message("start"), 
+        welcome_msg, 
         list(menu_buttons.values())
     )
     
     await show_main_menu(update, context, menu_buttons)
+
+
+async def registration_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles gender selection during registration.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = update.effective_user.id
+
+    if data.startswith("registration_gender_"):
+        gender = data.replace("registration_gender_", "")
+        name = context.user_data.get("reg_name")
+        
+        save_user(user_id, name, gender)
+        user_profile = {"name": name, "gender": gender}
+        context.user_data["user_profile"] = user_profile
+        context.user_data.pop("conversation_state", None)
+        
+        gender_text = "друже" if gender == "boy" else "подруго"
+        await send_text(update, context, f"УРААА! 🎉 Тепер ми офіційно друзі, {name}! "
+                                        f"\nЯ запам'ятав, що ти — найкращий у світі {gender_text}! "
+                                        f"\nГотовий до пригод у Бікіні Боттом? Тисни /start!")
 
 
 async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -56,7 +100,10 @@ async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     logger.info(f"Користувач {update.effective_user.id} обрав режим випадкового факту")
     await send_image(update, context, "random")
-    message_to_delete = await send_text(update, context, "Зараз-зараз, виловлюю найкрутіший факт із океану знань... 🫧")
+    
+    user_profile = context.user_data.get("user_profile")
+    name = user_profile["name"] if user_profile else "друже"
+    message_to_delete = await send_text(update, context, f"Зараз-зараз, {name}, виловлюю найкрутіший факт із океану знань... 🫧")
     try:
         prompt = load_prompt("random")
         fact = await chatgpt_service.send_question(
@@ -97,11 +144,17 @@ async def gpt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Handles the /gpt command. Initiates ChatGPT conversation mode.
     """
     logger.info(f"Користувач {update.effective_user.id} вибрав режим GPT")
+    user_profile = context.user_data.get("user_profile")
     context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
+    
+    name = user_profile["name"] if user_profile else ""
+    gender_text = "друже" if user_profile and user_profile.get("gender") == "boy" else "подруго"
+    
     await send_image(update, context, "gpt")
-    chatgpt_service.set_prompt(load_prompt("gpt"))
+    chatgpt_service.set_prompt(load_prompt("gpt") + f"\nКористувач: {name}, Стать: {user_profile['gender'] if user_profile else 'невідомо'}")
     buttons = {'start': '⬅️ Додому в Ананас'}
-    await send_text_buttons(update, context, "Я готовий! Я готовий! Запитай мене про що завгодно! 🍍✨", buttons)
+    await send_text_buttons(update, context, f"Я готовий! Я готовий! Запитай мене про що завгодно, {name}! 🍍✨", buttons)
 
     context.user_data["conversation_state"] = "gpt"
 
@@ -114,13 +167,27 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conversation_state = context.user_data.get("conversation_state")
     logger.info(f"Користувач {update.effective_user.id} надіслав повідомлення у стані {conversation_state}: {message_text[:50]}...")
 
+    if conversation_state == "registration_name":
+        context.user_data["reg_name"] = message_text
+        context.user_data["conversation_state"] = "registration_gender"
+        buttons = {
+            "registration_gender_boy": "Я Хлопчик! 👦",
+            "registration_gender_girl": "Я Дівчинка! 👧"
+        }
+        await send_text_buttons(update, context, f"Дуже приємно, {message_text}! 🤝 А тепер скажи мені по секрету... ти хлопчик чи дівчинка?", buttons)
+        return
+
     if conversation_state == "calc":
         step = context.user_data.get("calc_step", "first")
 
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "друже"
+        gender_suffix = "" if user_profile and user_profile.get("gender") == "boy" else "а"
+        
         if step == "first":
             a = _parse_number(message_text)
             if a is None:
-                await send_text(update, context, "Гаррі, це не число! 🐌 Спробуй ще раз, друже!")
+                await send_text(update, context, f"Гаррі, це не число! 🐌 Спробуй ще раз, {name}!")
                 return
 
             context.user_data["calc_a"] = a
@@ -139,7 +206,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if step == "second":
             b = _parse_number(message_text)
             if b is None:
-                await send_text(update, context, "Ой-ой! Це точно не число! Спробуй ще раз, як Патрік! ⭐️")
+                gender_ref = "як Патрік" if user_profile and user_profile.get("gender") == "boy" else "як зірочка"
+                await send_text(update, context, f"Ой-ой! Це точно не число! Спробуй ще раз, {gender_ref}! ⭐️")
                 return
 
             a = float(context.user_data["calc_a"])
@@ -191,7 +259,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "start": "⬅️ Назад до Лагуни",
                 }
                 context.user_data["calc_step"] = "first"
-                await send_text_buttons(update, context, "ПРАВИЛЬНО! Ти просто геній, як Сенді! 🐿✨", buttons)
+                congrats = "Ти просто геній, як Сенді!" if user_profile and user_profile.get("gender") == "boy" else "Ти просто геніальна, як Сенді!"
+                await send_text_buttons(update, context, f"ПРАВИЛЬНО! {congrats} 🐿✨", buttons)
                 return
 
             attempts += 1
@@ -241,10 +310,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=waiting_message.message_id
             )
     elif conversation_state == "talk":
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "друже"
+        gender = user_profile["gender"] if user_profile else "невідомо"
+        
         personality = context.user_data.get("selected_personality")
         if personality:
             prompt = load_prompt(personality)
-            chatgpt_service.set_prompt(prompt)
+            chatgpt_service.set_prompt(prompt + f"\nКористувач: {name}, Стать: {gender}")
         else:
             await send_text(update, context, "Гей! Спочатку обери, з ким хочеш потеревенити! 🗣🐙")
             return
@@ -264,9 +337,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=waiting_message.message_id
             )
     elif conversation_state == "translator":
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "друже"
+        
         target_lang = context.user_data.get("translator_lang")
         if not target_lang:
-            await send_text(update, context, "Крабсбургер мені в рот! Ти ж не вибрав мову! 🍔 Обери швидше!")
+            await send_text(update, context, f"Крабсбургер мені в рот, {name}! Ти ж не вибрав мову! 🍔 Обери швидше!")
             return
 
         waiting_message = await send_text(update, context, "Перекладаю на морську мову... 🫧")
@@ -362,11 +438,16 @@ async def talk_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await talk(update, context)
         return
     if data.startswith("talk_"):
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "friend"
+        gender = user_profile["gender"] if user_profile else "unknown"
+        
         context.user_data.clear()
+        context.user_data["user_profile"] = user_profile
         context.user_data["selected_personality"] = data
         context.user_data["conversation_state"] = "talk"
         prompt = load_prompt(data)
-        chatgpt_service.set_prompt(prompt)
+        chatgpt_service.set_prompt(prompt + f"\nКористувач: {name}, Стать: {gender}")
         personality_name = data.replace("talk_", "").replace("_", " ").title()
         await send_image(update, context, data)
         buttons = {
@@ -447,7 +528,9 @@ async def translator(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Handles the /translator command. Displays language selection for translation.
     """
     logger.info(f"Користувач {update.effective_user.id} відкрив режим перекладача")
+    user_profile = context.user_data.get("user_profile")
     context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
     context.user_data["conversation_state"] = "translator"
     await send_image(update, context, "translator")
 
@@ -470,6 +553,9 @@ async def translator_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Користувач {update.effective_user.id} вибрав мову або дію у перекладачі: {data}")
 
     if data == "start":
+        user_profile = context.user_data.get("user_profile")
+        context.user_data.clear()
+        context.user_data["user_profile"] = user_profile
         await start(update, context)
     elif data == "translator":
         await translator(update, context)
@@ -542,11 +628,14 @@ def _md_escape(text: str) -> str:
 
 async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Користувач {update.effective_user.id} відкрив калькулятор")
+    user_profile = context.user_data.get("user_profile")
     context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
     context.user_data["conversation_state"] = "calc"
     context.user_data["calc_step"] = "first"
+    name = user_profile["name"] if user_profile else ""
     await send_image(update, context, "calculator")
-    await send_text(update, context, "Я готовий! Я готовий! Давай порахуємо всі бульбашки в океані! 🧮🫧 Введи перше число:")
+    await send_text(update, context, f"Я готовий! Я готовий! Давай порахуємо всі бульбашки в океані, {name}! 🧮🫧 Введи перше число:")
 
 
 async def calc_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
