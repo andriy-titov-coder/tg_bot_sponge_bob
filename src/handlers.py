@@ -54,6 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'random': '🎲 Випадкова цікавинка',
         'story': '📖 Казка-конструктор',
         'quiz': '🐙 Морська вікторина',
+        'numbers': '🔢 Вгадай число',
         'game': '✂️ Камінь, ножиці, папір',
         'tictactoe': '❌⭕️ Хрестики-нулики',
         'gpt': '🧠 Запитати в Розумника',
@@ -300,6 +301,35 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_text_buttons(update, context, f"Дуже приємно, {message_text}! 🤝 А тепер скажи мені по секрету... ти хлопчик чи дівчинка?", buttons)
         return
 
+    if conversation_state == "numbers":
+        guess = _parse_number(message_text)
+        if guess is None:
+            await send_text(update, context, "Гаррі каже, що це не число! 🐌 Спробуй ще раз!")
+            return
+
+        target = context.user_data.get("numbers_target")
+        attempts = context.user_data.get("numbers_attempts", 0) + 1
+        context.user_data["numbers_attempts"] = attempts
+
+        user_profile = context.user_data.get("user_profile")
+        name = user_profile["name"] if user_profile else "друже"
+
+        if guess == target:
+            buttons = {
+                "numbers_again": "🔁 Ще раз!",
+                "start": "🏠 Головне меню"
+            }
+            await send_text_buttons(update, context,
+                                    f"УРААА! 🎉 ТИ ВГАДАВ! Це було число {int(target)}! \n"
+                                    f"Тобі знадобилося всього {attempts} спроб! Ти справжній детектив, {name}! 🕵️‍♂️🍍",
+                                    buttons)
+            context.user_data["conversation_state"] = None
+        elif guess < target:
+            await send_text(update, context, f"Більше! 📈 Моїх бульбашок було більше, ніж {int(guess)}! Спробуй ще!")
+        else:
+            await send_text(update, context, f"Менше! 📉 Моїх бульбашок було менше, ніж {int(guess)}! Спробуй ще!")
+        return
+
     if conversation_state == "calc":
         step = context.user_data.get("calc_step", "first")
 
@@ -513,6 +543,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message_text == '🧮 Рахуємо бульбашки':
             await calc(update, context)
             return
+        if message_text == '🔢 Вгадай число':
+            await numbers(update, context)
+            return
         if message_text == '📖 Казка-конструктор':
             await story(update, context)
             return
@@ -657,6 +690,15 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             text="Ого! Хрестики-нулики! Це моя улюблена морська забава! Давай спробуємо... ❌⭕️✨"
         )
         await tictactoe(update, context)
+        return True
+
+    elif any(keyword in message_text_lower for keyword in ['число', 'вгадай', 'numbers', 'цифр']):
+        await send_text(
+            update,
+            context,
+            text="О, я обожнюю загадки! Вгадай, скільки бульбашок я надув? 🔢🫧"
+        )
+        await numbers(update, context)
         return True
 
     elif any(keyword in message_text_lower for keyword in ['казк', 'історі', 'story', 'конструктор']):
@@ -840,6 +882,49 @@ async def translator_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         context.user_data["translator_lang"] = langs.get(lang_code, lang_code)
         await send_text(update, context, f"Є! Вибрано {context.user_data['translator_lang']} мову! 🌐 Тепер пиши свій текст, я чекаю!")
+
+
+async def numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Starts a "Guess the Number" game.
+    """
+    logger.info(f"Користувач {update.effective_user.id} запустив гру Вгадай число")
+    user_profile = context.user_data.get("user_profile")
+    context.user_data.clear()
+    context.user_data["user_profile"] = user_profile
+    context.user_data["conversation_state"] = "numbers"
+    
+    import random
+    target = random.randint(1, 100)
+    context.user_data["numbers_target"] = target
+    context.user_data["numbers_attempts"] = 0
+    
+    name = user_profile["name"] if user_profile else "друже"
+    
+    await send_image(update, context, "game")
+    
+    await send_text(update, context, 
+                    f"Я готовий! Я готовий! 🍍\n{name}, я загадав число від 1 до 100. \n"
+                    f"Спробуй вгадати, скільки бульбашок я надув! 🫧 Спробуй написати число:")
+
+
+async def numbers_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles callback queries for the numbers game.
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data == "numbers_again":
+        await numbers(update, context)
+        return
+    if data == "start":
+        user_profile = context.user_data.get("user_profile")
+        context.user_data.clear()
+        context.user_data["user_profile"] = user_profile
+        await start(update, context)
+        return
 
 
 async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
